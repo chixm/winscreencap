@@ -55,6 +55,17 @@ func GetAssembly() []*winmd.Assembly {
 	return assem
 }
 
+func GetTypes() {
+	for i := 0; i < int(metaData.Tables.TypeDef.Len); i++ {
+		ts, err := metaData.Tables.TypeDef.Record(winmd.Index(i))
+		if err != nil {
+			logger.Errorln(`skipped typedef`, err)
+			continue
+		}
+		logger.Infoln(`typedef :`, ts.Name.String())
+	}
+}
+
 // metaDataから生成
 func getGUID(t *winmd.AssemblyRef) *ole.GUID {
 

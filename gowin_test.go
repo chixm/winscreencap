@@ -18,5 +18,7 @@ func TestAssembly(t *testing.T) {
 
 	log.Println(len(assembly), `found`)
 
-	gowin.PrintMetaFile()
+	gowin.GetTypes()
+
+	//	gowin.PrintMetaFile()
 }
