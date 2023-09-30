@@ -21,5 +21,9 @@ func TestAssembly(t *testing.T) {
 	gowin.GetTypeDefs()
 
 	gowin.GetModules()
+
+	gowin.GetCustomAttributes()
+
+	gowin.CallDirect3D11CaptureFramePool()
 	//	gowin.PrintMetaFile()
 }

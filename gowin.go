@@ -86,6 +86,20 @@ func GetModules() []*winmd.Module {
 	return md
 }
 
+func GetCustomAttributes() []*winmd.CustomAttribute {
+	var md []*winmd.CustomAttribute
+	for i := 0; i < int(metaData.Tables.CustomAttribute.Len); i++ {
+		ts, err := metaData.Tables.CustomAttribute.Record(winmd.Index(i))
+		if err != nil {
+			logger.Errorln(`skipped custom attribute`, err)
+			continue
+		}
+		logger.Infoln(`custom attribute :`, ts.Parent.Index, `type: `, ts.Type, ts.Value)
+		md = append(md, ts)
+	}
+	return md
+}
+
 // metaDataから生成
 func getGUID(t *winmd.AssemblyRef) *ole.GUID {
 	return ole.NewGUID(``)
