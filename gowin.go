@@ -41,6 +41,7 @@ func PrintMetaFile() {
 	logger.Infoln(string(metaData.Strings))
 }
 
+// GetAssembly
 func GetAssembly() []*winmd.Assembly {
 	var assem []*winmd.Assembly
 	for i := 0; i < int(metaData.Tables.Assembly.Len); i++ {
@@ -55,7 +56,9 @@ func GetAssembly() []*winmd.Assembly {
 	return assem
 }
 
-func GetTypes() {
+// GetTypeDefs
+func GetTypeDefs() []*winmd.TypeDef {
+	var td []*winmd.TypeDef
 	for i := 0; i < int(metaData.Tables.TypeDef.Len); i++ {
 		ts, err := metaData.Tables.TypeDef.Record(winmd.Index(i))
 		if err != nil {
@@ -63,11 +66,27 @@ func GetTypes() {
 			continue
 		}
 		logger.Infoln(`typedef :`, ts.Name.String())
+		td = append(td, ts)
 	}
+	return td
+}
+
+// GetModules
+func GetModules() []*winmd.Module {
+	var md []*winmd.Module
+	for i := 0; i < int(metaData.Tables.Module.Len); i++ {
+		ts, err := metaData.Tables.Module.Record(winmd.Index(i))
+		if err != nil {
+			logger.Errorln(`skipped module`, err)
+			continue
+		}
+		logger.Infoln(`module :`, ts.Name.String())
+		md = append(md, ts)
+	}
+	return md
 }
 
 // metaDataから生成
 func getGUID(t *winmd.AssemblyRef) *ole.GUID {
-
 	return ole.NewGUID(``)
 }
