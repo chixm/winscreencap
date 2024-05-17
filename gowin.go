@@ -1,106 +1,45 @@
 package gowin
 
 import (
-	"debug/pe"
+	"image"
+	"unsafe"
 
-	"github.com/go-ole/go-ole"
-	"github.com/microsoft/go-winmd"
+	"github.com/lxn/win"
 )
 
-const (
-	RO_INIT_SINGLETHREADED = 0
-	RO_INIT_MULTITHREADED  = 1
-)
+func CaptureWindow(hwnd win.HWND) (image.Image, error) {
+	var rect win.RECT
+	win.GetWindowRect(hwnd, &rect)
 
-func init() {
-	ole.RoInitialize(RO_INIT_MULTITHREADED)
-	LoadWinMetaData()
-}
+	width := rect.Right - rect.Left
+	height := rect.Bottom - rect.Top
 
-// Windows Meta Data is placed at
-// C:\Windows\System32\WinMetadata
-const pathGraphics = `C:\Windows\System32\WinMetadata\Windows.Graphics.winmd`
+	hdc := win.GetDC(hwnd)
+	defer win.ReleaseDC(hwnd, hdc)
 
-var metaData *winmd.Metadata
+	memDC := win.CreateCompatibleDC(hdc)
+	defer win.DeleteDC(memDC)
 
-func LoadWinMetaData() error {
-	pefile, err := pe.Open(pathGraphics)
-	if err != nil {
-		return err
+	bitmap := win.CreateCompatibleBitmap(hdc, width, height)
+	defer win.DeleteObject(win.HGDIOBJ(bitmap))
+
+	win.SelectObject(memDC, win.HGDIOBJ(bitmap))
+	win.BitBlt(memDC, 0, 0, width, height, hdc, 0, 0, win.SRCCOPY)
+
+	img := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
+
+	bitmapInfo := win.BITMAPINFO{
+		BmiHeader: win.BITMAPINFOHEADER{
+			BiSize:        uint32(unsafe.Sizeof(win.BITMAPINFOHEADER{})),
+			BiWidth:       int32(width),
+			BiHeight:      -int32(height),
+			BiPlanes:      1,
+			BiBitCount:    32,
+			BiCompression: win.BI_RGB,
+		},
 	}
-	f, err := winmd.New(pefile)
-	if err != nil {
-		return err
-	}
-	logger.Infoln(`loaded version`, f.Version)
-	metaData = f
-	return nil
-}
 
-func PrintMetaFile() {
-	logger.Infoln(string(metaData.Strings))
-}
+	win.GetDIBits(memDC, bitmap, 0, uint32(height), &img.Pix[0], &bitmapInfo, win.DIB_RGB_COLORS)
 
-// GetAssembly
-func GetAssembly() []*winmd.Assembly {
-	var assem []*winmd.Assembly
-	for i := 0; i < int(metaData.Tables.Assembly.Len); i++ {
-		az, err := metaData.Tables.Assembly.Record(winmd.Index(i))
-		if err != nil {
-			logger.Infoln(`skipped assembly`, i)
-			continue
-		}
-		logger.Infoln(`load :`, az.Name.String())
-		assem = append(assem, az)
-	}
-	return assem
-}
-
-// GetTypeDefs
-func GetTypeDefs() []*winmd.TypeDef {
-	var td []*winmd.TypeDef
-	for i := 0; i < int(metaData.Tables.TypeDef.Len); i++ {
-		ts, err := metaData.Tables.TypeDef.Record(winmd.Index(i))
-		if err != nil {
-			logger.Errorln(`skipped typedef`, err)
-			continue
-		}
-		logger.Infoln(`typedef :`, ts.Name.String())
-		td = append(td, ts)
-	}
-	return td
-}
-
-// GetModules
-func GetModules() []*winmd.Module {
-	var md []*winmd.Module
-	for i := 0; i < int(metaData.Tables.Module.Len); i++ {
-		ts, err := metaData.Tables.Module.Record(winmd.Index(i))
-		if err != nil {
-			logger.Errorln(`skipped module`, err)
-			continue
-		}
-		logger.Infoln(`module :`, ts.Name.String())
-		md = append(md, ts)
-	}
-	return md
-}
-
-func GetCustomAttributes() []*winmd.CustomAttribute {
-	var md []*winmd.CustomAttribute
-	for i := 0; i < int(metaData.Tables.CustomAttribute.Len); i++ {
-		ts, err := metaData.Tables.CustomAttribute.Record(winmd.Index(i))
-		if err != nil {
-			logger.Errorln(`skipped custom attribute`, err)
-			continue
-		}
-		logger.Infoln(`custom attribute :`, ts.Parent.Index, `type: `, ts.Type, ts.Value)
-		md = append(md, ts)
-	}
-	return md
-}
-
-// metaDataから生成
-func getGUID(t *winmd.AssemblyRef) *ole.GUID {
-	return ole.NewGUID(``)
+	return img, nil
 }
