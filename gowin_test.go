@@ -1,29 +1,37 @@
 package gowin_test
 
 import (
-	"log"
+	"fmt"
+	"image/png"
+	"os"
 	"testing"
 
 	"github.com/chixm/gowin"
+	"github.com/lxn/win"
 )
 
-func TestLoad(t *testing.T) {
-	gowin.LoadWinMetaData()
-}
+func TestWindowCapture(t *testing.T) {
+	// Capture DesktopWindow and save it as screenshot.png
+	hwnd := win.GetDesktopWindow()
 
-func TestAssembly(t *testing.T) {
-	gowin.LoadWinMetaData()
+	img, err := gowin.CaptureWindow(hwnd)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
 
-	assembly := gowin.GetAssembly()
+	file, err := os.Create("screenshot.png")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer file.Close()
 
-	log.Println(len(assembly), `found`)
+	err = png.Encode(file, img)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
 
-	gowin.GetTypeDefs()
-
-	gowin.GetModules()
-
-	gowin.GetCustomAttributes()
-
-	gowin.CallDirect3D11CaptureFramePool()
-	//	gowin.PrintMetaFile()
+	fmt.Println("Screenshot saved to screenshot.png")
 }
