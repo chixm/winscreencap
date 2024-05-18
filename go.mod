@@ -1,4 +1,4 @@
-module github.com/chixm/gowin
+module github.com/chixm/winscreencap
 
 go 1.18
 

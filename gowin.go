@@ -1,4 +1,4 @@
-package gowin
+package winscreencap
 
 import (
 	"errors"
@@ -35,10 +35,17 @@ type Options uint32
 
 const (
 	WithWindowFrame = Options(1 << iota) // 1
+	NoAlphaFix                           // 2 Do not automatically fix even alpha value is zero,
 )
 
 // Capture all the window
-func CaptureWindow(hwnd win.HWND, option Options) (image.Image, error) {
+func CaptureWindow(hwnd win.HWND, options ...Options) (image.Image, error) {
+	// JOIN options
+	var option Options
+	for _, v := range options {
+		option = option & v
+	}
+
 	var rect win.RECT
 	if option&WithWindowFrame > 0 {
 		win.GetWindowRect(hwnd, &rect)
@@ -61,7 +68,7 @@ func CaptureWindow(hwnd win.HWND, option Options) (image.Image, error) {
 	defer win.DeleteObject(win.HGDIOBJ(bitmap))
 
 	win.SelectObject(memDC, win.HGDIOBJ(bitmap))
-	if !win.BitBlt(memDC, 0, 0, width, height, hdc, 0, 0, win.SRCCOPY) {
+	if !win.BitBlt(memDC, 0, 0, width, height, hdc, rect.Top, rect.Left, win.SRCCOPY) {
 		return nil, errors.New(`failed to BitBlt screen`)
 	}
 
@@ -91,7 +98,7 @@ func CaptureWindow(hwnd win.HWND, option Options) (image.Image, error) {
 			img.Pix[i+0] = bgra[i+2] // R
 			img.Pix[i+1] = bgra[i+1] // G
 			img.Pix[i+2] = bgra[i+0] // B
-			if bgra[i+3] == 0 {
+			if bgra[i+3] == 0 && (option&NoAlphaFix == 0) {
 				img.Pix[i+3] = 255
 			} else {
 				img.Pix[i+3] = bgra[i+3] // A

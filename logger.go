@@ -1,4 +1,4 @@
-package gowin
+package winscreencap
 
 import "log"
 

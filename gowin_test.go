@@ -1,4 +1,4 @@
-package gowin_test
+package winscreencap_test
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/chixm/gowin"
+	gowin "github.com/chixm/winscreencap"
 	"github.com/lxn/win"
 )
 
@@ -44,7 +44,7 @@ func TestWindowCapture(t *testing.T) {
 		return
 	}
 
-	img, err := gowin.CaptureWindow(hwnd, 0)
+	img, err := gowin.CaptureWindow(hwnd)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return

@@ -1,2 +1,3 @@
-# gowin
-Golang windows runtime
+# winscreencap
+Golang windows ScreenCapture Library
+
