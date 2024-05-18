@@ -1,15 +1,52 @@
 package gowin
 
 import (
+	"errors"
+	"fmt"
 	"image"
+	"syscall"
 	"unsafe"
 
 	"github.com/lxn/win"
 )
 
-func CaptureWindow(hwnd win.HWND) (image.Image, error) {
+func FindWindowByName(windowName string) (win.HWND, error) {
+	str, err := syscall.UTF16PtrFromString(windowName)
+	if err != nil {
+		return 0, err
+	}
+	hwnd := win.FindWindow(nil, str)
+	if hwnd == 0 {
+		return 0, fmt.Errorf(`window named %s not found`, windowName)
+	}
+	return hwnd, nil
+}
+
+func GetActiveWindow() (win.HWND, error) {
+	hwnd := win.GetActiveWindow()
+	if hwnd == 0 {
+		return 0, errors.New(`no active window found`)
+	}
+	return hwnd, nil
+}
+
+// CaptureOptions
+type Options uint32
+
+const (
+	WithWindowFrame = Options(1 << iota) // 1
+)
+
+// Capture all the window
+func CaptureWindow(hwnd win.HWND, option Options) (image.Image, error) {
 	var rect win.RECT
-	win.GetWindowRect(hwnd, &rect)
+	if option&WithWindowFrame > 0 {
+		win.GetWindowRect(hwnd, &rect)
+	} else {
+		if !win.GetClientRect(hwnd, &rect) {
+			return nil, errors.New(`failed to get client area of hwnd`)
+		}
+	}
 
 	width := rect.Right - rect.Left
 	height := rect.Bottom - rect.Top
@@ -24,7 +61,9 @@ func CaptureWindow(hwnd win.HWND) (image.Image, error) {
 	defer win.DeleteObject(win.HGDIOBJ(bitmap))
 
 	win.SelectObject(memDC, win.HGDIOBJ(bitmap))
-	win.BitBlt(memDC, 0, 0, width, height, hdc, 0, 0, win.SRCCOPY)
+	if !win.BitBlt(memDC, 0, 0, width, height, hdc, 0, 0, win.SRCCOPY) {
+		return nil, errors.New(`failed to BitBlt screen`)
+	}
 
 	img := image.NewRGBA(image.Rect(0, 0, int(width), int(height)))
 
@@ -39,7 +78,8 @@ func CaptureWindow(hwnd win.HWND) (image.Image, error) {
 		},
 	}
 
-	win.GetDIBits(memDC, bitmap, 0, uint32(height), &img.Pix[0], &bitmapInfo, win.DIB_RGB_COLORS)
-
+	if win.GetDIBits(memDC, bitmap, 0, uint32(height), &img.Pix[0], &bitmapInfo, win.DIB_RGB_COLORS) == int32(0) {
+		return nil, fmt.Errorf(`can not get DIBits of window`)
+	}
 	return img, nil
 }
