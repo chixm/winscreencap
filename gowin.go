@@ -78,8 +78,25 @@ func CaptureWindow(hwnd win.HWND, option Options) (image.Image, error) {
 		},
 	}
 
-	if win.GetDIBits(memDC, bitmap, 0, uint32(height), &img.Pix[0], &bitmapInfo, win.DIB_RGB_COLORS) == int32(0) {
+	bgra := make([]byte, width*height*4)
+
+	if win.GetDIBits(memDC, bitmap, 0, uint32(height), &bgra[0], &bitmapInfo, win.DIB_RGB_COLORS) == int32(0) {
 		return nil, fmt.Errorf(`can not get DIBits of window`)
+	}
+
+	// Convert BGRA to RGBA
+	for y := 0; y < int(height); y++ {
+		for x := 0; x < int(width); x++ {
+			i := (y*int(width) + x) * 4
+			img.Pix[i+0] = bgra[i+2] // R
+			img.Pix[i+1] = bgra[i+1] // G
+			img.Pix[i+2] = bgra[i+0] // B
+			if bgra[i+3] == 0 {
+				img.Pix[i+3] = 255
+			} else {
+				img.Pix[i+3] = bgra[i+3] // A
+			}
+		}
 	}
 	return img, nil
 }
