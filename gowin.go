@@ -34,7 +34,7 @@ func GetActiveWindow() (win.HWND, error) {
 type Options uint32
 
 const (
-	WithWindowFrame = Options(1 << iota) // 1
+	WithWindowFrame = Options(1 << iota) // 1 Include Windows Frame in png image
 	NoAlphaFix                           // 2 Do not automatically fix even alpha value is zero,
 )
 
