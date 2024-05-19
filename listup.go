@@ -14,17 +14,15 @@ type WindowInfo struct {
 // mutex for goroutine safe
 var m = sync.Mutex{}
 
+// list to put window infos in
 var list []*WindowInfo
 
-func enumWindowsProc() {
-	// callback function
-	EnumWindows(EnumWindowsProc, 0)
-}
-
-func WindowList() []*WindowInfo {
+// get all visible window list
+func GetWindowList() []*WindowInfo {
 	m.Lock()
 	defer m.Unlock()
 	list = make([]*WindowInfo, 0)
-	enumWindowsProc()
+	// callback function
+	EnumWindows(enumWindowsProc, 0)
 	return list
 }

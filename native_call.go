@@ -2,6 +2,7 @@ package winscreencap
 
 import (
 	"syscall"
+	"unsafe"
 
 	"github.com/lxn/win"
 )
@@ -31,9 +32,34 @@ func EnumWindows(enumFunc WNDENUMPROC, lParam uintptr) error {
 	return nil
 }
 
-func EnumWindowsProc(hwnd win.HWND, lParam uintptr) uintptr {
+func enumWindowsProc(hwnd win.HWND, lParam uintptr) uintptr {
 	if win.IsWindowVisible(hwnd) {
-		logger.Infoln(`found visible window hwnd:`, hwnd)
+		title, err := getWindowText(hwnd)
+		if err != nil {
+			//logger.Errorln(`Error on getting Window Title`, err)
+			return 1
+		}
+		list = append(list, &WindowInfo{
+			Hwnd:  hwnd,
+			Title: title,
+		})
 	}
 	return 1 // Continue enumeration
+}
+
+func getWindowText(hwnd win.HWND) (string, error) {
+	length, _, err := procGetWindowTextLengthW.Call(uintptr(hwnd))
+	if length == 0 {
+		return "", err
+	}
+	buf := make([]uint16, length+1)
+	_, _, err = procGetWindowTextW.Call(
+		uintptr(hwnd),
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(len(buf)),
+	)
+	if err != nil && err.Error() != "The operation completed successfully." {
+		return "", err
+	}
+	return syscall.UTF16ToString(buf), nil
 }

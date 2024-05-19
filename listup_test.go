@@ -8,8 +8,7 @@ import (
 )
 
 func TestListUpWindow(t *testing.T) {
-	windowList := winscreencap.WindowList()
-
+	windowList := winscreencap.GetWindowList()
 	for _, v := range windowList {
 		log.Println(v.Title, v.Hwnd)
 	}
