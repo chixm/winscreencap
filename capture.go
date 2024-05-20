@@ -30,6 +30,15 @@ func GetActiveWindow() (win.HWND, error) {
 	return hwnd, nil
 }
 
+// for desktop image capture
+func GetDesktopWindow() (win.HWND, error) {
+	hwnd := win.GetDesktopWindow()
+	if hwnd == 0 {
+		return 0, errors.New(`failed to get window handle of desktop`)
+	}
+	return hwnd, nil
+}
+
 // CaptureOptions
 type Options uint32
 

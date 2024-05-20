@@ -6,15 +6,18 @@ import (
 	"os"
 	"testing"
 
-	gowin "github.com/chixm/winscreencap"
-	"github.com/lxn/win"
+	"github.com/chixm/winscreencap"
 )
 
 func TestDesktopCapture(t *testing.T) {
 	// Capture DesktopWindow and save it as screenshot.png
-	hwnd := win.GetDesktopWindow()
+	hwnd, err := winscreencap.GetDesktopWindow()
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
-	img, err := gowin.CaptureWindow(hwnd, 0)
+	img, err := winscreencap.CaptureWindow(hwnd, 0)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -37,14 +40,14 @@ func TestDesktopCapture(t *testing.T) {
 }
 
 func TestWindowCapture(t *testing.T) {
-	// Capture DesktopWindow and save it as screenshot.png
-	hwnd, err := gowin.FindWindowByName(`game`)
+
+	hwnd, err := winscreencap.FindWindowByName(`game`)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	img, err := gowin.CaptureWindow(hwnd)
+	img, err := winscreencap.CaptureWindow(hwnd)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
@@ -68,13 +71,13 @@ func TestWindowCapture(t *testing.T) {
 
 func TestActiveWindowCapture(t *testing.T) {
 	// Capture DesktopWindow and save it as screenshot.png
-	hwnd, err := gowin.GetActiveWindow()
+	hwnd, err := winscreencap.GetActiveWindow()
 	if err != nil {
 		t.Error(err) // when debug, No window should be active
 		return
 	}
 
-	img, err := gowin.CaptureWindow(hwnd, 0)
+	img, err := winscreencap.CaptureWindow(hwnd, 0)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
