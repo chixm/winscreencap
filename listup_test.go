@@ -30,6 +30,12 @@ func TestListUpAndTakeShot(t *testing.T) {
 			continue
 		}
 
+		flag, err := winscreencap.GetWindowDisplayAffinity(v.Hwnd)
+		log.Println(`affinity flag is `, flag)
+		if err != nil || flag&winscreencap.WDA_EXCLUDEFROMCAPTURE > 0 {
+			continue
+		}
+
 		index++
 
 		img, err := winscreencap.CaptureWindow(v.Hwnd)

@@ -13,10 +13,11 @@ import (
 // https://learn.microsoft.com/ja-jp/windows/win32/api/winuser/nf-winuser-enumwindows
 
 var (
-	modUser32                = syscall.NewLazyDLL("user32.dll")
-	procEnumWindows          = modUser32.NewProc("EnumWindows")
-	procGetWindowTextW       = modUser32.NewProc("GetWindowTextW")
-	procGetWindowTextLengthW = modUser32.NewProc("GetWindowTextLengthW")
+	modUser32                    = syscall.NewLazyDLL("user32.dll")
+	procEnumWindows              = modUser32.NewProc("EnumWindows")
+	procGetWindowTextW           = modUser32.NewProc("GetWindowTextW")
+	procGetWindowTextLengthW     = modUser32.NewProc("GetWindowTextLengthW")
+	procGetWindowDisplayAffinity = modUser32.NewProc("GetWindowDisplayAffinity")
 )
 
 type WNDENUMPROC func(hwnd win.HWND, lParam uintptr) uintptr
@@ -62,4 +63,23 @@ func getWindowText(hwnd win.HWND) (string, error) {
 		return "", err
 	}
 	return syscall.UTF16ToString(buf), nil
+}
+
+const (
+	WDA_NONE               = 0x00000000
+	WDA_MONITOR            = 0x00000001
+	WDA_EXCLUDEFROMCAPTURE = 0x00000011
+)
+
+// Some Windows are Disabled to Capture
+func GetWindowDisplayAffinity(hwnd win.HWND) (uint32, error) {
+	var affinity uint32
+	ret, _, err := procGetWindowDisplayAffinity.Call(
+		uintptr(hwnd),
+		uintptr(unsafe.Pointer(&affinity)),
+	)
+	if ret == 0 {
+		return 0, err
+	}
+	return affinity, nil
 }
