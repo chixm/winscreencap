@@ -19,6 +19,7 @@ const (
 
 // Capture all the window
 func CaptureWindow(hwnd win.HWND, options ...Options) (image.Image, error) {
+
 	// JOIN options
 	var option Options
 	for _, v := range options {
@@ -46,7 +47,9 @@ func CaptureWindow(hwnd win.HWND, options ...Options) (image.Image, error) {
 	bitmap := win.CreateCompatibleBitmap(hdc, width, height)
 	defer win.DeleteObject(win.HGDIOBJ(bitmap))
 
-	win.SelectObject(memDC, win.HGDIOBJ(bitmap))
+	hbmOld := win.SelectObject(memDC, win.HGDIOBJ(bitmap))
+	defer win.SelectObject(memDC, win.HGDIOBJ(hbmOld))
+
 	if !win.BitBlt(memDC, 0, 0, width, height, hdc, rect.Top, rect.Left, win.SRCCOPY) {
 		return nil, errors.New(`failed to BitBlt screen`)
 	}
