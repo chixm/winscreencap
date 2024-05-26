@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/chixm/winscreencap"
+	"github.com/gonutz/w32/v2"
 )
 
 func TestDesktopCapture(t *testing.T) {
@@ -78,6 +79,36 @@ func TestActiveWindowCapture(t *testing.T) {
 	}
 
 	img, err := winscreencap.CaptureWindow(hwnd, 0)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	file, err := os.Create("screenshot.png")
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+	defer file.Close()
+
+	err = png.Encode(file, img)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Println("Screenshot saved to screenshot.png")
+}
+
+func TestWindowCapture2(t *testing.T) {
+
+	hwnd, err := winscreencap.FindWindowByName(`天啓パラドクス`)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	img, err := winscreencap.CaptureWindow2(w32.HWND(hwnd))
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
