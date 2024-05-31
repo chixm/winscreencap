@@ -101,7 +101,7 @@ func TestActiveWindowCapture(t *testing.T) {
 
 func TestWindowCaptureByName(t *testing.T) {
 
-	hwnd, err := winscreencap.FindWindowByName(`マイゲーム`)
+	hwnd, err := winscreencap.FindWindowByName(`game window title`)
 	if err != nil {
 		t.Error(err)
 		return
