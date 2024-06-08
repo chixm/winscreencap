@@ -50,7 +50,9 @@ func CaptureWindow(hwnd win.HWND, options ...Options) (image.Image, error) {
 	hbmOld := win.SelectObject(memDC, win.HGDIOBJ(bitmap))
 	defer win.SelectObject(memDC, win.HGDIOBJ(hbmOld))
 
-	if !win.BitBlt(memDC, 0, 0, width, height, hdc, rect.Top, rect.Left, win.SRCCOPY) {
+	printWindow(hwnd, memDC)
+
+	if !win.BitBlt(memDC, 0, 0, width, height, hdc, rect.Top, rect.Left, win.SRCCOPY|win.CAPTUREBLT) {
 		return nil, errors.New(`failed to BitBlt screen`)
 	}
 

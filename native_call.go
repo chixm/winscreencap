@@ -18,6 +18,7 @@ var (
 	procGetWindowTextW           = modUser32.NewProc("GetWindowTextW")
 	procGetWindowTextLengthW     = modUser32.NewProc("GetWindowTextLengthW")
 	procGetWindowDisplayAffinity = modUser32.NewProc("GetWindowDisplayAffinity")
+	procPrintWindow              = modUser32.NewProc("PrintWindow")
 )
 
 type WNDENUMPROC func(hwnd win.HWND, lParam uintptr) uintptr
@@ -82,4 +83,17 @@ func GetWindowDisplayAffinity(hwnd win.HWND) (uint32, error) {
 		return 0, err
 	}
 	return affinity, nil
+}
+
+func printWindow(hwnd win.HWND, hdc win.HDC) error {
+	var PW_RENDERERFULLCONTEXT uint32 = 2
+	ret, _, err := procPrintWindow.Call(
+		uintptr(hwnd),
+		uintptr(hdc),
+		uintptr(PW_RENDERERFULLCONTEXT),
+	)
+	if ret == 0 {
+		return err
+	}
+	return nil
 }
