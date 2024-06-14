@@ -2,177 +2,379 @@ package winscreencap
 
 import (
 	"fmt"
-	"image"
-	"image/color"
-	"image/png"
 	"os"
+	"runtime"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/TKMAX777/winapi/dx11"
 	"github.com/TKMAX777/winapi/winrt"
-
-	"golang.org/x/sys/windows"
+	"github.com/go-ole/go-ole"
+	"github.com/lxn/win"
+	"github.com/pkg/errors"
 )
 
-var (
-	d3d11 = syscall.NewLazyDLL("d3d11.dll")
-	dxgi  = syscall.NewLazyDLL("dxgi.dll")
-)
+type CaptureHandler struct {
+	device                 *winrt.IDirect3DDevice
+	deviceDx               *dx11.ID3D11Device
+	graphicsCaptureItem    *winrt.IGraphicsCaptureItem
+	framePool              *winrt.IDirect3D11CaptureFramePool
+	graphicsCaptureSession *winrt.IGraphicsCaptureSession
+	framePoolToken         *winrt.EventRegistrationToken
+	isRunning              bool
+}
 
-func main() {
-	// Get handle to the desktop window
-	hwnd, _ := GetDesktopWindow()
-	if hwnd == 0 {
-		fmt.Println("Failed to get handle to the desktop window")
-		return
+func (c *CaptureHandler) StartCapture(hwnd win.HWND) error {
+	type resultAttr struct {
+		err error
 	}
 
-	// Initialize DirectX
-	device, context, err := initD3D11()
-	if err != nil {
-		fmt.Println("Failed to initialize DirectX:", err)
-		return
-	}
-	defer device.Release()
-	defer context.Release()
+	var result = make(chan resultAttr)
 
-	// Create DXGI output duplicator
-	duplicator, err := createDuplicator(device)
-	if err != nil {
-		fmt.Println("Failed to create DXGI output duplicator:", err)
-		return
-	}
-	defer duplicator.Release()
+	go func() {
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
 
-	// Capture frames
-	for i := 0; i < 1; i++ { // Capture only one frame for example
-		frame, err := captureFrame(duplicator, context)
+		// Initialize Windows Runtime
+		err := winrt.RoInitialize(winrt.RO_INIT_MULTITHREADED)
 		if err != nil {
-			fmt.Println("Failed to capture frame:", err)
+			result <- resultAttr{errors.Wrap(err, "RoInitialize")}
+			return
+		}
+		defer winrt.RoUninitialize()
+
+		// Create capture device
+		var featureLevels = []dx11.D3D_FEATURE_LEVEL{
+			dx11.D3D_FEATURE_LEVEL_11_0,
+			dx11.D3D_FEATURE_LEVEL_10_1,
+			dx11.D3D_FEATURE_LEVEL_10_0,
+			dx11.D3D_FEATURE_LEVEL_9_3,
+			dx11.D3D_FEATURE_LEVEL_9_2,
+			dx11.D3D_FEATURE_LEVEL_9_1,
+		}
+
+		err = dx11.D3D11CreateDevice(
+			nil, dx11.D3D_DRIVER_TYPE_HARDWARE, 0, dx11.D3D11_CREATE_DEVICE_BGRA_SUPPORT|dx11.D3D11_CREATE_DEVICE_DEBUG,
+			&featureLevels[0], len(featureLevels),
+			dx11.D3D11_SDK_VERSION, &c.deviceDx, nil, nil,
+		)
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "D3DCreateDevice")}
+			return
+		}
+		defer c.deviceDx.Release()
+
+		// Query interface of DXGIDevice
+		var dxgiDevice *dx11.IDXGIDevice
+		err = c.deviceDx.PutQueryInterface(dx11.IDXGIDeviceID, &dxgiDevice)
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "PutQueryInterface")}
 			return
 		}
 
-		// Process frame and save to PNG
-		err = processFrame(frame, i)
+		var deviceRT *ole.IInspectable
+
+		// convert D3D11Device(Dx11) to Direct3DDevice(WinRT)
+		err = dx11.CreateDirect3D11DeviceFromDXGIDevice(dxgiDevice, &deviceRT)
 		if err != nil {
-			fmt.Println("Failed to process frame:", err)
+			result <- resultAttr{errors.Wrap(err, "CreateDirect3D11DeviceFromDXGIDevice")}
+			return
+		}
+		defer deviceRT.Release()
+
+		// Query interface of IDirect3DDevice
+		err = deviceRT.PutQueryInterface(winrt.IDirect3DDeviceID, &c.device)
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "QueryInterface: IDirect3DDeviceID")}
+			return
+		}
+		defer c.device.Release()
+
+		// Create Capture Settings
+		factory, err := ole.RoGetActivationFactory(winrt.GraphicsCaptureItemClass, winrt.IGraphicsCaptureItemInteropID)
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "RoGetActivationFactory: IGraphicsCaptureItemID")}
+			return
+		}
+		defer factory.Release()
+
+		var interop *winrt.IGraphicsCaptureItemInterop
+		err = factory.PutQueryInterface(winrt.IGraphicsCaptureItemInteropID, &interop)
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "QueryInterface: IGraphicsCaptureItemInteropID")}
+			return
+		}
+		defer interop.Release()
+
+		var captureItemDispatch *ole.IInspectable
+		/*
+			// Capture for the window specified
+			err = interop.CreateForWindow(hwnd, winrt.IGraphicsCaptureItemID, &captureItemDispatch)
+			if err != nil {
+				return errors.Wrap(err, "CreateForWindow")
+			}
+			defer captureItemDispatch.Release()
+		*/
+
+		// Capture for the monitor specified
+		var hmoni = win.MonitorFromWindow(hwnd, win.MONITORINFOF_PRIMARY)
+
+		err = interop.CreateForMonitor(hmoni, winrt.IGraphicsCaptureItemID, &captureItemDispatch)
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "CreateForMonitor")}
+			return
+		}
+		defer captureItemDispatch.Release()
+
+		// Get Interface of IGraphicsCaptureItem
+		err = captureItemDispatch.PutQueryInterface(winrt.IGraphicsCaptureItemID, &c.graphicsCaptureItem)
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "PutQueryInterface captureItemDispatch")}
 			return
 		}
 
-		time.Sleep(time.Second / 30)
-	}
-}
-
-// キャプチャ用デバイスを返す
-func initD3D11() (*winrt.IDirect3DDevice, ID3D11DeviceContext, error) {
-	var device *winrt.IDirect3DDevice
-	var context *winrt.IDirect3DDeviceVtbl
-
-	var featureLevels = []dx11.D3D_FEATURE_LEVEL{
-		dx11.D3D_FEATURE_LEVEL_11_0,
-		dx11.D3D_FEATURE_LEVEL_10_1,
-		dx11.D3D_FEATURE_LEVEL_10_0,
-		dx11.D3D_FEATURE_LEVEL_9_3,
-		dx11.D3D_FEATURE_LEVEL_9_2,
-		dx11.D3D_FEATURE_LEVEL_9_1,
-	}
-
-	err := dx11.D3D11CreateDevice(
-		nil, dx11.D3D_DRIVER_TYPE_HARDWARE, 0, dx11.D3D11_CREATE_DEVICE_BGRA_SUPPORT|dx11.D3D11_CREATE_DEVICE_DEBUG,
-		&featureLevels[0], len(featureLevels),
-		dx11.D3D11_SDK_VERSION, &c.deviceDx, nil, nil,
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return device, context, nil
-}
-
-func createDuplicator(device *windows.ID3D11Device) (*windows.IDXGIOutputDuplication, error) {
-	var adapter *windows.IDXGIAdapter
-	hr := device.QueryInterface(&windows.IID_IDXGIDevice, &adapter)
-	if windows.FAILED(hr) {
-		return nil, fmt.Errorf("QueryInterface for IDXGIDevice failed: %v", hr)
-	}
-	defer adapter.Release()
-
-	var output *windows.IDXGIOutput
-	hr = adapter.EnumOutputs(0, &output)
-	if windows.FAILED(hr) {
-		return nil, fmt.Errorf("EnumOutputs failed: %v", hr)
-	}
-	defer output.Release()
-
-	var output1 *windows.IDXGIOutput1
-	hr = output.QueryInterface(&windows.IID_IDXGIOutput1, &output1)
-	if windows.FAILED(hr) {
-		return nil, fmt.Errorf("QueryInterface for IDXGIOutput1 failed: %v", hr)
-	}
-	defer output1.Release()
-
-	var duplicator *windows.IDXGIOutputDuplication
-	hr = output1.DuplicateOutput(device, &duplicator)
-	if windows.FAILED(hr) {
-		return nil, fmt.Errorf("DuplicateOutput failed: %v", hr)
-	}
-
-	return duplicator, nil
-}
-
-func captureFrame(duplicator *windows.IDXGIOutputDuplication, context *windows.ID3D11DeviceContext) (*windows.ID3D11Texture2D, error) {
-	var frameInfo windows.DXGI_OUTDUPL_FRAME_INFO
-	var resource *windows.IDXGIResource
-
-	hr := duplicator.AcquireNextFrame(0, &frameInfo, &resource)
-	if hr == windows.DXGI_ERROR_WAIT_TIMEOUT {
-		return nil, nil // No new frame available
-	} else if windows.FAILED(hr) {
-		return nil, fmt.Errorf("AcquireNextFrame failed: %v", hr)
-	}
-	defer resource.Release()
-
-	// Get the IDXGISurface interface for the captured frame
-	var texture *windows.ID3D11Texture2D
-	hr = resource.QueryInterface(&windows.IID_ID3D11Texture2D, &texture)
-	if windows.FAILED(hr) {
-		return nil, fmt.Errorf("QueryInterface for ID3D11Texture2D failed: %v", hr)
-	}
-
-	return texture, nil
-}
-
-func processFrame(frame *winrt.ID3D11Texture2D, index int) error {
-	// Map the frame to CPU memory
-	var mappedResource windows.D3D11_MAPPED_SUBRESOURCE
-	context.Map(frame, 0, windows.D3D11_MAP_READ, 0, &mappedResource)
-	defer context.Unmap(frame, 0)
-
-	// Create an image from the mapped resource
-	img := image.NewRGBA(image.Rect(0, 0, int(frameDesc.Width), int(frameDesc.Height)))
-	for y := 0; y < int(frameDesc.Height); y++ {
-		for x := 0; x < int(frameDesc.Width); x++ {
-			offset := y*int(mappedResource.RowPitch) + x*4
-			b := mappedResource.Data[offset+0]
-			g := mappedResource.Data[offset+1]
-			r := mappedResource.Data[offset+2]
-			a := mappedResource.Data[offset+3]
-			img.SetRGBA(x, y, color.RGBA{R: r, G: g, B: b, A: a})
+		// Get Capture objects size
+		size, err := c.graphicsCaptureItem.Size()
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "Size")}
+			return
 		}
+
+		// Get object of Direct3D11CaptureFramePoolClass
+		ins, err := ole.RoGetActivationFactory(winrt.Direct3D11CaptureFramePoolClass, winrt.IDirect3D11CaptureFramePoolStaticsID)
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "RoGetActivationFactory: IDirect3D11CaptureFramePoolStatics Class Instance")}
+			return
+		}
+		defer ins.Release()
+
+		// Get Interface of Direct3D11CaptureFramePoolClass
+		var framePoolStatic *winrt.IDirect3D11CaptureFramePoolStatics2
+		err = ins.PutQueryInterface(winrt.IDirect3D11CaptureFramePoolStatics2ID, &framePoolStatic)
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "PutQueryInterface: IDirect3D11CaptureFramePoolStaticsID")}
+			return
+		}
+		defer framePoolStatic.Release()
+
+		// Create frame pool
+		c.framePool, err = framePoolStatic.CreateFreeThreaded(c.device, winrt.DirectXPixelFormat_B8G8R8A8UIntNormalized, 1, size)
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "CreateFramePool")}
+			return
+		}
+
+		// Set frame settings
+		var eventObject = NewDirect3D11CaptureFramePool(c.onFrameArrived)
+
+		c.framePoolToken, err = c.framePool.AddFrameArrived(unsafe.Pointer(eventObject))
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "AddFrameArrived")}
+			return
+		}
+		defer eventObject.Release()
+
+		c.graphicsCaptureSession, err = c.framePool.CreateCaptureSession(c.graphicsCaptureItem)
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "CreateCaptureSession")}
+			return
+		}
+		defer c.graphicsCaptureSession.Release()
+
+		// Start capturing
+		err = c.graphicsCaptureSession.StartCapture()
+		if err != nil {
+			result <- resultAttr{errors.Wrap(err, "StartCapture")}
+			return
+		}
+
+		c.isRunning = true
+
+		result <- resultAttr{nil}
+
+		for c.isRunning {
+			time.Sleep(time.Second)
+		}
+	}()
+
+	var res = <-result
+	close(result)
+
+	fmt.Println("Start Capturing")
+
+	return res.err
+}
+
+func (c *CaptureHandler) onFrameArrived(this_ *uintptr, sender *winrt.IDirect3D11CaptureFramePool, args *ole.IInspectable) uintptr {
+	_ = (*Direct3D11CaptureFramePool)(unsafe.Pointer(this_))
+	frame, err := sender.TryGetNextFrame()
+	if err != nil {
+		os.Stderr.Write([]byte("Error: TryGetNextFrame: " + err.Error()))
+		return 0
 	}
 
-	// Save the image to a PNG file
-	file, err := os.Create(fmt.Sprintf("frame_%d.png", index))
-	if err != nil {
-		return fmt.Errorf("failed to create PNG file: %v", err)
-	}
-	defer file.Close()
+	// Do conversions here
 
-	err = png.Encode(file, img)
-	if err != nil {
-		return fmt.Errorf("failed to encode PNG: %v", err)
+	var close *winrt.IClosable
+	frame.PutQueryInterface(winrt.IClosableID, &close)
+	close.Close()
+
+	return 0
+}
+
+func (c *CaptureHandler) Close() error {
+	if !c.isRunning {
+		return nil
 	}
+
+	if c.framePool != nil {
+		err := c.framePool.RemoveFrameArrived(c.framePoolToken)
+		if err != nil {
+			return errors.Wrap(err, "RemoveFrameArrived")
+		}
+
+		var closable *winrt.IClosable
+		err = c.framePool.PutQueryInterface(winrt.IClosableID, &closable)
+		if err != nil {
+			return errors.Wrap(err, "PutQueryInterface: graphicsCaptureSession")
+		}
+		defer closable.Release()
+
+		closable.Close()
+
+		c.framePool = nil
+	}
+
+	var closable *winrt.IClosable
+	err := c.graphicsCaptureSession.PutQueryInterface(winrt.IClosableID, &closable)
+	if err != nil {
+		return errors.Wrap(err, "PutQueryInterface: graphicsCaptureSession")
+	}
+	defer closable.Release()
+
+	closable.Close()
+
+	c.graphicsCaptureItem = nil
+	c.isRunning = false
 
 	return nil
+}
+
+// Direct3D11CaptureFramePool
+
+// Protect from gabage collecter
+var generatedDirect3D11CaptureFramePool = map[uintptr]*Direct3D11CaptureFramePoolVtbl{}
+
+type Direct3D11CaptureFramePool struct {
+	ole.IUnknown
+}
+
+type Direct3D11CaptureFramePoolVtbl struct {
+	ole.IUnknownVtbl
+	Invoke  uintptr
+	counter *int
+}
+
+func NewDirect3D11CaptureFramePool(invoke winrt.Direct3D11CaptureFramePoolFrameArrivedProcType) *Direct3D11CaptureFramePool {
+	var counter = 1
+	var v = &Direct3D11CaptureFramePoolVtbl{
+		Invoke:  syscall.NewCallback(invoke),
+		counter: &counter,
+	}
+
+	var newV = new(Direct3D11CaptureFramePool)
+	newV.RawVTable = (*interface{})(unsafe.Pointer(v))
+
+	v.QueryInterface = syscall.NewCallback(newV.queryInterface)
+	v.AddRef = syscall.NewCallback(newV.addRef)
+	v.Release = syscall.NewCallback(newV.release)
+
+	generatedDirect3D11CaptureFramePool[uintptr(unsafe.Pointer(newV))] = v
+
+	return newV
+}
+
+func (v *Direct3D11CaptureFramePool) VTable() *Direct3D11CaptureFramePoolVtbl {
+	return (*Direct3D11CaptureFramePoolVtbl)(unsafe.Pointer(v.RawVTable))
+}
+
+func (v *Direct3D11CaptureFramePool) Invoke(sender *winrt.IDirect3D11CaptureFramePool, args *ole.IInspectable) error {
+	r1, _, _ := syscall.SyscallN(v.VTable().Invoke, uintptr(unsafe.Pointer(sender)), uintptr(unsafe.Pointer(args)))
+	return ole.NewError(r1)
+}
+
+// QueryInterface(vp *Direct3D11CaptureFramePool, riid ole.GUID, lppvObj **ole.Inspectable)
+func (v *Direct3D11CaptureFramePool) queryInterface(lpMyObj *uintptr, riid *uintptr, lppvObj **uintptr) uintptr {
+	// Validate input
+	if lpMyObj == nil {
+		return win.E_INVALIDARG
+	}
+
+	var V = new(Direct3D11CaptureFramePool)
+
+	var err error
+	// Check dereferencability
+	func() {
+		defer func() {
+			if recover() != nil {
+				err = errors.New("InvalidObject")
+			}
+		}()
+		// if object cannot be dereferenced, then panic occurs
+		*V = *(*Direct3D11CaptureFramePool)(unsafe.Pointer(lpMyObj))
+		V.VTable()
+	}()
+	if err != nil {
+		return win.E_INVALIDARG
+	}
+
+	*lppvObj = nil
+	var id = new(ole.GUID)
+	*id = *(*ole.GUID)(unsafe.Pointer(riid))
+
+	// Convert
+	switch id.String() {
+	case ole.IID_IUnknown.String(), winrt.ITypedEventHandlerID.String(), winrt.IAgileObjectID.String():
+		V.AddRef()
+		*lppvObj = (*uintptr)(unsafe.Pointer(V))
+
+		return win.S_OK
+	default:
+		return win.E_NOINTERFACE
+	}
+}
+
+func (v *Direct3D11CaptureFramePool) addRef(lpMyObj *uintptr) uintptr {
+	// Validate input
+	if lpMyObj == nil {
+		return 0
+	}
+
+	var V = (*Direct3D11CaptureFramePool)(unsafe.Pointer(lpMyObj))
+	*V.VTable().counter++
+
+	return uintptr(*V.VTable().counter)
+}
+
+func (v *Direct3D11CaptureFramePool) release(lpMyObj *uintptr) uintptr {
+	// Validate input
+	if lpMyObj == nil {
+		return 0
+	}
+
+	var V = (*Direct3D11CaptureFramePool)(unsafe.Pointer(lpMyObj))
+	*V.VTable().counter--
+
+	if *V.VTable().counter == 0 {
+		V.RawVTable = nil
+		_, ok := generatedDirect3D11CaptureFramePool[uintptr(unsafe.Pointer(lpMyObj))]
+		if ok {
+			delete(generatedDirect3D11CaptureFramePool, uintptr(unsafe.Pointer(lpMyObj)))
+			runtime.GC()
+		}
+		return 0
+	}
+
+	return uintptr(*V.VTable().counter)
 }
