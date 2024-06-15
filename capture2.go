@@ -108,24 +108,24 @@ func (c *CaptureHandler) StartCapture(hwnd win.HWND) error {
 		defer interop.Release()
 
 		var captureItemDispatch *ole.IInspectable
-		/*
-			// Capture for the window specified
-			err = interop.CreateForWindow(hwnd, winrt.IGraphicsCaptureItemID, &captureItemDispatch)
-			if err != nil {
-				return errors.Wrap(err, "CreateForWindow")
-			}
-			defer captureItemDispatch.Release()
-		*/
+
+		// Capture for the window specified
+		err = interop.CreateForWindow(hwnd, winrt.IGraphicsCaptureItemID, &captureItemDispatch)
+		if err != nil {
+			result <- resultAttr{fmt.Errorf(`%w CreateForWindow`, err)}
+			return
+		}
+		defer captureItemDispatch.Release()
 
 		// Capture for the monitor specified
-		var hmoni = win.MonitorFromWindow(hwnd, win.MONITORINFOF_PRIMARY)
+		/**var hmoni = win.MonitorFromWindow(hwnd, win.MONITORINFOF_PRIMARY)
 
 		err = interop.CreateForMonitor(hmoni, winrt.IGraphicsCaptureItemID, &captureItemDispatch)
 		if err != nil {
 			result <- resultAttr{errors.Wrap(err, "CreateForMonitor")}
 			return
 		}
-		defer captureItemDispatch.Release()
+		defer captureItemDispatch.Release()*/
 
 		// Get Interface of IGraphicsCaptureItem
 		err = captureItemDispatch.PutQueryInterface(winrt.IGraphicsCaptureItemID, &c.graphicsCaptureItem)
